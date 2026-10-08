@@ -27,6 +27,9 @@ router.use('/auth', require('./auth'));
 // 🤖 AI assistant (Claude, with a keyword fallback)
 router.use('/ai', require('./ai'));
 
+// 📍 Weather, alerts, places and nearby facilities
+router.use('/geo', require('./geo'));
+
 // 🎓 Content: scholarships, loans, schemes, guides, facilities
 router.use(require('./content'));
 

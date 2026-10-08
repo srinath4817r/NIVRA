@@ -108,7 +108,8 @@ body {
 .liquid-bg {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  /* below all content in #root's stacking context (z-index 0 would paint over static blocks) */
+  z-index: -1;
   overflow: hidden;
   pointer-events: none;
   background:
@@ -540,12 +541,13 @@ h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-
 
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  /* 'none' (not translateY(0)) so finished elements don't trap position:fixed children */
+  to   { opacity: 1; transform: none; }
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes popIn {
   from { opacity: 0; transform: scale(0.94) translateY(8px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 1; transform: none; }
 }
 
 .stagger > * { animation: fadeInUp 0.55s var(--ease-out) both; }
@@ -711,4 +713,38 @@ h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-
   .glass-panel, .glass-card, .service-card-spec, .bottom-nav-glass, .liquid-pill { background: var(--bg-solid); }
 }
 
+/* ─── Map (Leaflet) ───────────────────────────────── */
+.map-pin {
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  border-radius: 50% 50% 50% 4px;
+  transform: rotate(-45deg);
+  background: color-mix(in srgb, var(--pin) 35%, #17132a);
+  border: 2px solid var(--pin);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.45);
+  transition: transform 0.25s var(--ease-liquid);
+}
+.map-pin > span { transform: rotate(45deg); line-height: 1; }
+.map-pin.active { transform: rotate(-45deg) scale(1.25); box-shadow: 0 0 0 4px color-mix(in srgb, var(--pin) 35%, transparent), 0 8px 18px rgba(0,0,0,0.5); }
+.map-you {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #FFB547; border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(255,181,71,0.3);
+}
 } /* @layer components */
+
+/* Leaflet overrides live outside the layer: Leaflet's own CSS is unlayered and would win */
+.leaflet-container { background: #10131c; font-family: 'Inter', sans-serif; }
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-container .leaflet-popup-tip {
+  background: rgba(23, 19, 42, 0.92);
+  color: #fff;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+.leaflet-container .leaflet-popup-content a { color: #FFD992; }
+.leaflet-container .leaflet-control-attribution { background: rgba(0,0,0,0.55) !important; color: rgba(255,255,255,0.7) !important; }
+.leaflet-container .leaflet-control-attribution a { color: #FFD992 !important; }
+.leaflet-container .leaflet-popup-close-button { color: rgba(255,255,255,0.7); }
+.leaflet-container .leaflet-bar a { background: rgba(23,19,42,0.9); color: #fff; border-color: rgba(255,255,255,0.15); }

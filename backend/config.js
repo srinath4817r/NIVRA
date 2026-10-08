@@ -41,6 +41,8 @@ module.exports = {
     twilioFrom: process.env.TWILIO_FROM_NUMBER || '',
   },
 
+  sentryDsn: process.env.SENTRY_DSN || '',
+
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-opus-5-5',
 };

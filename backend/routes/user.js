@@ -66,26 +66,36 @@ router.post('/trackers', requireAuth, validate({
   res.status(201).json({ success: true, tracker: trackerOut(row) });
 });
 
-// The user records progress themselves (NIVRA can't read government systems)
+// The user records progress, the portal's reference number and the real deadline
+// themselves (NIVRA can't read government systems)
 router.patch('/trackers/:id', requireAuth, validate({
   params: uuid,
   body: z.object({
-    stepIndex: z.number().int().min(0).max(20),
-    done: z.boolean(),
-  }),
+    stepIndex: z.number().int().min(0).max(20).optional(),
+    done: z.boolean().optional(),
+    referenceNo: z.string().trim().min(1).max(80).optional(),
+    deadline: z.iso.date('Use YYYY-MM-DD').nullable().optional(),
+  }).refine(b => (b.stepIndex === undefined) === (b.done === undefined), 'stepIndex and done go together'),
 }), async (req, res) => {
   const t = await db.one('SELECT * FROM trackers WHERE id = $1 AND user_id = $2', [req.valid.params.id, req.user.id]);
   if (!t) return res.status(404).json({ error: 'Tracker not found' });
 
-  const { stepIndex, done } = req.valid.body;
-  if (stepIndex >= t.steps.length) return res.status(400).json({ error: 'Invalid step' });
-  const today = new Date().toISOString().slice(0, 10);
-  const steps = t.steps.map((s, i) => (i === stepIndex ? { ...s, done, date: done ? today : null } : s));
-  const last = [...steps].reverse().find(s => s.done);
-  const status = steps.every(s => s.done) ? 'Completed' : (last ? last.name : 'Not started');
+  const { stepIndex, done, referenceNo, deadline } = req.valid.body;
+  let { steps, status } = t;
+  if (stepIndex !== undefined) {
+    if (stepIndex >= steps.length) return res.status(400).json({ error: 'Invalid step' });
+    const today = new Date().toISOString().slice(0, 10);
+    steps = steps.map((s, i) => (i === stepIndex ? { ...s, done, date: done ? today : null } : s));
+    const last = [...steps].reverse().find(s => s.done);
+    status = steps.every(s => s.done) ? 'Completed' : (last ? last.name : 'Not started');
+  }
 
-  const row = await db.one('UPDATE trackers SET steps = $2, status = $3 WHERE id = $1 RETURNING *',
-    [t.id, JSON.stringify(steps), status]);
+  const row = await db.one(
+    `UPDATE trackers SET steps = $2, status = $3,
+       reference_no = COALESCE($4, reference_no),
+       deadline = CASE WHEN $5::boolean THEN $6::date ELSE deadline END
+     WHERE id = $1 RETURNING *`,
+    [t.id, JSON.stringify(steps), status, referenceNo ?? null, deadline !== undefined, deadline ?? null]);
   res.json({ success: true, tracker: trackerOut(row) });
 });
 

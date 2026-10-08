@@ -7,8 +7,8 @@ import { API_BASE_URL, getJSON, request } from './http';
  * Ask the assistant. `history` is the recent conversation so follow-up questions work.
  * Throws ApiError when the server can't be reached (no fake answers).
  */
-export function sendAIQuery(query, history = []) {
-  return request('/ai/chat', { method: 'POST', body: { query, history } });
+export function sendAIQuery(query, history = [], language = 'en') {
+  return request('/ai/chat', { method: 'POST', body: { query, history, language } });
 }
 
 /**
@@ -86,20 +86,6 @@ export async function getServiceGuides() {
     return data.data || [];
   } catch {
     return fallbackGuides;
-  }
-}
-
-/**
- * Fetch Emergency Services & Shelters
- */
-export async function getEmergencyData(type = 'all') {
-  try {
-    return await getJSON('/emergency', { type });
-  } catch {
-    return {
-      emergencyFacilities: type === 'all' ? fallbackEmergency : fallbackEmergency.filter(f => f.type === type),
-      disasterShelters: fallbackShelters
-    };
   }
 }
 
@@ -215,41 +201,5 @@ const fallbackGuides = [
       "Self-Declaration Affidavit"
     ],
     officialPortal: "https://edistrict.gov.in"
-  }
-];
-
-const fallbackEmergency = [
-  {
-    id: "emp-1",
-    name: "AIIMS Government General Hospital",
-    type: "Hospital",
-    address: "Ansari Nagar, Ring Road",
-    phone: "102 / 011-26588500",
-    distance: "1.2 km",
-    servicesAvailable: ["24x7 ICU", "Trauma Unit", "Free Oxygen & Blood Bank"],
-    status: "Open 24/7"
-  },
-  {
-    id: "emp-2",
-    name: "Central Fire & Rescue Command",
-    type: "Fire Station",
-    address: "Station Road, Sector 4",
-    phone: "101",
-    distance: "2.4 km",
-    servicesAvailable: ["Fire Rescue", "Flood Water Rescue"],
-    status: "Open 24/7"
-  }
-];
-
-const fallbackShelters = [
-  {
-    id: "sh-1",
-    name: "Government High School Relief Camp",
-    disasterType: "Flood / Cyclone Shelter",
-    location: "Zone 3 Riverbank Road",
-    capacity: "800 Persons",
-    currentOccupancy: "120 Persons",
-    facilities: ["Clean Water", "Hot Meals", "Medical Post", "Power Backup"],
-    contactPhone: "+91 98765 43210"
   }
 ];

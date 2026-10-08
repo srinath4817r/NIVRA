@@ -1,30 +1,35 @@
 // frontend/src/App.jsx — NIVRA Platform Central Routing & App Shell
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, Link } from 'react-router-dom';
-import { LanguageProvider } from './context/LanguageContext';
+import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
+import { LocationProvider } from './context/LocationContext';
+import { SavedProvider } from './context/SavedContext';
 import { ROUTES } from './routes';
 import Header from './components/Header';
+import OfflineBanner from './components/OfflineBanner';
 import SplashScreen from './components/SplashScreen';
 import LoginScreen from './components/LoginScreen';
 import LogoutConfirmModal from './components/LogoutConfirmModal';
 import HomeScreen from './components/HomeScreen';
-import AIChatAssistant from './components/AIChatAssistant';
-import StudentHub from './components/StudentHub';
-import CitizenPortal from './components/CitizenPortal';
-import EmergencyCenter from './components/EmergencyCenter';
-import TrackerDashboard from './components/TrackerDashboard';
-import AdminReports from './components/AdminReports';
-import { Home as HomeIcon, Grid, Bell, User, Compass } from 'lucide-react';
+// Pages load on demand so the first screen downloads less on slow mobile data
+const AIChatAssistant = lazy(() => import('./components/AIChatAssistant'));
+const StudentHub = lazy(() => import('./components/StudentHub'));
+const CitizenPortal = lazy(() => import('./components/CitizenPortal'));
+const EmergencyCenter = lazy(() => import('./components/EmergencyCenter'));
+const TrackerDashboard = lazy(() => import('./components/TrackerDashboard'));
+const AdminReports = lazy(() => import('./components/AdminReports'));
+const EligibilityChecker = lazy(() => import('./components/EligibilityChecker'));
+import { Home as HomeIcon, Grid, Bell, User, Compass, Loader2 } from 'lucide-react';
 
 // Tab bar slots (index 2 is the centre AI button)
 const NAV_SLOTS = [
-  { to: ROUTES.home,      label: 'Home',     icon: HomeIcon, match: p => p === '/' },
-  { to: ROUTES.services,  label: 'Services', icon: Grid,     match: p => ['/services', '/scholarships', '/documents'].some(r => p.startsWith(r)) },
+  { to: ROUTES.home,      label: 'nav_home',     icon: HomeIcon, match: p => p === '/' },
+  { to: ROUTES.services,  label: 'nav_services', icon: Grid,     match: p => ['/services', '/scholarships', '/documents', '/eligibility'].some(r => p.startsWith(r)) },
   { to: ROUTES.assistant, label: 'NIVRA AI', ai: true,       match: p => p.startsWith('/assistant') },
-  { to: ROUTES.emergency, label: 'Alerts',   icon: Bell,     match: p => p.startsWith('/emergency') },
-  { to: ROUTES.profile,   label: 'Profile',  icon: User,     match: p => p.startsWith('/profile') },
+  { to: ROUTES.emergency, label: 'nav_alerts',   icon: Bell,     match: p => p.startsWith('/emergency') },
+  { to: ROUTES.profile,   label: 'nav_profile',  icon: User,     match: p => p.startsWith('/profile') },
 ];
 
 function ScrollToTop() {
@@ -35,6 +40,7 @@ function ScrollToTop() {
 
 function BottomNav() {
   const { pathname } = useLocation();
+  const { t } = useLanguage();
   const activeIndex = NAV_SLOTS.findIndex(s => s.match(pathname));
   const showIndicator = activeIndex !== -1 && !NAV_SLOTS[activeIndex].ai;
 
@@ -69,7 +75,7 @@ function BottomNav() {
             aria-current={isActive ? 'page' : undefined}
           >
             <Icon className="w-5 h-5" />
-            <span>{slot.label}</span>
+            <span>{t[slot.label]}</span>
           </NavLink>
         );
       })}
@@ -99,17 +105,21 @@ function AppContent() {
   // keyed by user so a new sign-in never sees the previous user's conversation
   return (
     <ChatProvider key={user?.id}>
+    <SavedProvider key={user?.id}>
       <div className="min-h-screen flex flex-col">
         <ScrollToTop />
         <Header />
+        <OfflineBanner />
 
         <main className="flex-1 pb-32 max-w-7xl w-full mx-auto px-3 sm:px-4 pt-3">
+          <Suspense fallback={<div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-amber-300" aria-label="Loading" /></div>}>
           <Routes>
             <Route path={ROUTES.home} element={<HomeScreen />} />
             <Route path={ROUTES.assistant} element={<AIChatAssistant />} />
             <Route path={ROUTES.services} element={<CitizenPortal viewMode="all-services" />} />
             <Route path={ROUTES.scholarships} element={<StudentHub />} />
             <Route path={`${ROUTES.scholarships}/:id`} element={<StudentHub />} />
+            <Route path={ROUTES.eligibility} element={<EligibilityChecker />} />
             <Route path={ROUTES.documents} element={<CitizenPortal viewMode="documents" />} />
             <Route path={ROUTES.emergency} element={<EmergencyCenter />} />
             <Route path={ROUTES.profile} element={<TrackerDashboard />} />
@@ -122,6 +132,7 @@ function AppContent() {
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
         </main>
 
         <BottomNav />
@@ -131,6 +142,7 @@ function AppContent() {
           NIVRA — One Place. Every Service. • A Safer, Smarter and Stronger India With NIVRA
         </footer>
       </div>
+    </SavedProvider>
     </ChatProvider>
   );
 }
@@ -140,6 +152,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <LanguageProvider>
+          <LocationProvider>
           <div className="liquid-bg" aria-hidden="true">
             <div className="blob blob-1" />
             <div className="blob blob-2" />
@@ -147,6 +160,7 @@ export default function App() {
             <div className="blob blob-4" />
           </div>
           <AppContent />
+          </LocationProvider>
         </LanguageProvider>
       </AuthProvider>
     </BrowserRouter>

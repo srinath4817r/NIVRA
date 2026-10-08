@@ -1,5 +1,5 @@
 // backend/services/keywordAssistant.js — rule-based answers used when Claude is not configured or unavailable
-const { scholarships, educationLoans, governmentSchemes, serviceGuides, emergencyServices, disasterShelters } = require('../data/content');
+const { scholarships, educationLoans, governmentSchemes, serviceGuides } = require('../data/content');
 
 function keywordAnswer(query) {
   const text = query.toLowerCase();
@@ -17,12 +17,12 @@ function keywordAnswer(query) {
   if (text.match(/flood|waterlog|rain|trapped|shelter|cyclone|earthquake|storm|fire emergency|rescue|disaster|relief camp/i)) {
     intentCategory = "DISASTER_ASSISTANCE";
     urgentAction = true;
-    responseText = "🚨 I identified your situation as a **Disaster & Emergency Assistance Requirement**. Immediate guidance and nearby relief options are listed below.";
-    matchedItems = disasterShelters.concat(emergencyServices.filter(s => s.type === "Fire Station" || s.type === "Hospital"));
+    responseText = "🚨 I identified your situation as a **Disaster & Emergency Assistance Requirement**. Follow the steps below, and open the Emergency tab for help near you.";
+    matchedItems = [];
     nextSteps = [
       "Stay on elevated ground away from electric poles and active floodwater.",
       "Call National Disaster Response Force / State Helpline at 1070 or Emergency 112.",
-      "Navigate to the nearest verified disaster relief shelter listed below.",
+      "Open the Emergency tab to see hospitals, police and fire stations near your location.",
       "Use the 'Report Disaster Issue' button to broadcast your exact location to local rescue teams."
     ];
     officialSources = [
@@ -35,10 +35,10 @@ function keywordAnswer(query) {
     intentCategory = "EMERGENCY_LOCATOR";
     urgentAction = true;
     responseText = "🚑 I classified your query as an **Emergency Service Locator Request**. Quick response contact numbers and nearby facilities are ready.";
-    matchedItems = emergencyServices;
+    matchedItems = [];
     nextSteps = [
       "Dial 108 for Medical Ambulance or 112 for Unified Emergency Support instantly.",
-      "Locate the nearest 24x7 trauma hospital using the location map below.",
+      "Open the Emergency tab to find the nearest hospital on the map.",
       "If reporting a crime or fire, contact 100 (Police) or 101 (Fire Command)."
     ];
     officialSources = [
@@ -136,7 +136,7 @@ function keywordAnswer(query) {
   else {
     intentCategory = "GENERAL_GUIDANCE";
     responseText = "💡 I have analyzed your requirement. Based on your prompt, here is a breakdown of government, student, and emergency services available on our platform.";
-    matchedItems = scholarships.slice(0, 2).concat(governmentSchemes.slice(0, 1)).concat(emergencyServices.slice(0, 1));
+    matchedItems = scholarships.slice(0, 2).concat(governmentSchemes.slice(0, 1));
     nextSteps = [
       "Select your role above (Student, Citizen, or Emergency).",
       "Use our specialized finders for Scholarships, Education Loans, or Government Schemes.",

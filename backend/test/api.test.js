@@ -146,7 +146,14 @@ test('tracking the same content item twice does not duplicate', async () => {
   const again = await agent.post('/api/trackers').send(body);
   assert.equal(again.body.duplicate, true);
   assert.equal((await agent.get('/api/trackers')).body.count, 1);
-  assert.equal((await agent.get('/api/trackers')).body.data[0].deadline, '2026-10-31', 'deadline copied from content');
+  const id = (await agent.get('/api/trackers')).body.data[0].id;
+  const upd = await agent.patch(`/api/trackers/${id}`).send({ deadline: '2026-11-15', referenceNo: 'NSP/26/123' });
+  assert.equal(upd.status, 200, JSON.stringify(upd.body));
+  assert.equal(upd.body.tracker.deadline, '2026-11-15');
+  assert.equal(upd.body.tracker.referenceNo, 'NSP/26/123');
+  assert.equal((await agent.patch(`/api/trackers/${id}`).send({ deadline: 'next week' })).status, 400);
+  const cleared = await agent.patch(`/api/trackers/${id}`).send({ deadline: null });
+  assert.equal(cleared.body.tracker.deadline, null);
 });
 
 test('saved items', async () => {
@@ -257,4 +264,32 @@ test('guest merge skips items the account already tracks', async () => {
   assert.equal(res.status, 200);
   const items = (await guest.get('/api/trackers')).body.data.map(t => t.itemId).sort();
   assert.deepEqual(items, ['sch-2', 'sch-4']);
+});
+
+test('eligibility checker', async () => {
+  const res = await request(app).post('/api/eligibility').send({ profile: {
+    age: 18, gender: 'female', annualIncome: 300000, category: 'sc', educationLevel: 'ug', state: 'Telangana', occupation: 'student',
+  } });
+  assert.equal(res.status, 200);
+  const by = Object.fromEntries(res.body.results.map(r => [r.item.id, r]));
+  assert.equal(by['sch-3'].status, 'likely', 'Pragati: girl, UG, income ≤ 8L; first-year condition to confirm');
+  assert.equal(by['sch-9'].status, 'likely', 'Top Class SC: SC, UG, ≤ 8L; institution to confirm');
+  assert.equal(by['gov-8'].status, 'eligible', 'PMSBY: age 18–70 is the only rule');
+  assert.equal(by['gov-6'].status, 'likely', 'Ujjwala never a clean pass: BPL household must be confirmed');
+  assert.equal(by['gov-6'].checks.at(-1).result, 'confirm');
+  assert.equal(by['sch-4'].status, 'not_eligible', 'Post-matric SC: income above 2.5L');
+  assert.equal(by['sch-6'].status, 'not_eligible', 'OBC scheme for an SC student');
+  assert.equal(by['sch-10'].status, 'not_eligible', 'North-east only');
+  assert.equal(by['sch-7'].status, 'maybe', 'disability not answered');
+  assert.equal(by['gov-2'].status, 'not_eligible', '70+ scheme');
+  assert.equal(res.body.results[0].status, 'eligible', 'eligible items first');
+  assert.equal(res.body.summary.eligible + res.body.summary.maybe + res.body.summary.notEligible, res.body.results.length);
+
+  const empty = await request(app).post('/api/eligibility').send({ profile: {} });
+  assert.equal(empty.body.summary.notEligible, 0, 'unanswered questions never rule you out');
+
+  const nj = await request(app).post('/api/eligibility').send({ profile: { state: 'Jammu & Kashmir', educationLevel: 'ug', annualIncome: 100000 } });
+  assert.equal(nj.body.results.find(r => r.item.id === 'sch-11').status, 'likely', '"&" and "and" match');
+
+  assert.equal((await request(app).post('/api/eligibility').send({ profile: { category: 'vip' } })).status, 400);
 });

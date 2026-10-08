@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useChat } from '../context/ChatContext';
 import { useLanguage } from '../context/LanguageContext';
 import { ROUTES, trackState } from '../routes';
+import MicButton from './MicButton';
 import {
   Send, ImagePlus, FileText, CheckCircle2, ExternalLink, Bot,
   BookmarkPlus, ChevronRight, ListChecks, X, RotateCcw, ScanEye, PhoneCall
@@ -179,11 +180,11 @@ export default function AIChatAssistant() {
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="font-display text-2xl font-black text-white leading-tight">NIVRA AI</h2>
-            <p className="text-xs text-white/60">Your intelligent service guide</p>
+            <p className="text-xs text-white/60">{t.ai_subtitle}</p>
           </div>
           {hasConversation && (
             <button onClick={resetChat} className="btn-secondary !py-1.5 !px-3 text-xs" title="New conversation">
-              <RotateCcw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">New chat</span>
+              <RotateCcw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t.new_chat}</span>
             </button>
           )}
         </div>
@@ -275,12 +276,13 @@ export default function AIChatAssistant() {
             <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
           </label>
 
+          <MicButton onText={(text) => setInputText(text)} className="flex-shrink-0" />
           <div className="search-glow-wrapper flex-1">
             <input
               type="text"
               value={inputText}
               onChange={e => setInputText(e.target.value)}
-              placeholder="Type your question…"
+              placeholder={t.type_question}
               aria-label="Message"
               className="input-glass !py-2.5"
             />

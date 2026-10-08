@@ -2,6 +2,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, X } from 'lucide-react';
+import ModalPortal from './ModalPortal';
 
 export default function LogoutConfirmModal() {
   const { showLogoutConfirm, setShowLogoutConfirm, logout } = useAuth();
@@ -9,7 +10,7 @@ export default function LogoutConfirmModal() {
   if (!showLogoutConfirm) return null;
 
   return (
-    <div
+    <ModalPortal><div
       className="modal-backdrop z-[9999]"
       onClick={e => { if (e.target === e.currentTarget) setShowLogoutConfirm(false); }}
       role="alertdialog"
@@ -35,6 +36,6 @@ export default function LogoutConfirmModal() {
           <button onClick={logout} className="btn-emergency !animate-none justify-center text-xs">Yes, log out</button>
         </div>
       </div>
-    </div>
+    </div></ModalPortal>
   );
 }

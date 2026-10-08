@@ -4,6 +4,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getGovernmentSchemes } from '../services/api';
 import { ROUTES, trackState } from '../routes';
 import useDebounce from '../hooks/useDebounce';
+import { SaveButton } from '../context/SavedContext';
+import { rememberItems } from '../lib/items';
 import {
   Building2, Search, ExternalLink, ShieldCheck, FileText,
   ChevronRight, BookmarkPlus, GraduationCap, Landmark, Briefcase, HeartPulse,
@@ -134,7 +136,7 @@ function ServicesHub() {
 
   useEffect(() => {
     let cancelled = false;
-    getGovernmentSchemes(debouncedQuery).then(data => { if (!cancelled) setSchemes(data); });
+    getGovernmentSchemes(debouncedQuery).then(data => { if (!cancelled) { rememberItems(data); setSchemes(data); } });
     return () => { cancelled = true; };
   }, [debouncedQuery]);
 
@@ -192,14 +194,17 @@ function ServicesHub() {
                   <span>Official Portal</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
-                <button
-                  onClick={() => navigate(ROUTES.profile, { state: trackState(sch) })}
-                  className="btn-icon"
-                  title="Track application"
-                  aria-label="Track application"
-                >
-                  <BookmarkPlus className="w-4 h-4" />
-                </button>
+                <div className="flex gap-1.5">
+                  <SaveButton itemId={sch.id} name={sch.name} />
+                  <button
+                    onClick={() => navigate(ROUTES.profile, { state: trackState(sch) })}
+                    className="btn-icon"
+                    title="Track application"
+                    aria-label={`Track ${sch.name}`}
+                  >
+                    <BookmarkPlus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

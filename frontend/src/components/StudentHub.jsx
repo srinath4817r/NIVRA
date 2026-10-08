@@ -4,6 +4,8 @@ import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { getScholarships, getScholarshipById, getEducationLoans } from '../services/api';
 import { ROUTES, trackState } from '../routes';
 import useDebounce from '../hooks/useDebounce';
+import { SaveButton } from '../context/SavedContext';
+import { deadlineText, rememberItems } from '../lib/items';
 import {
   GraduationCap, Award, Landmark, Search, ExternalLink, BookmarkPlus,
   ChevronRight, ChevronLeft, CheckCircle2, CalendarClock, SearchX, Loader2
@@ -11,18 +13,13 @@ import {
 
 const FILTERS = ['All', 'Engineering', 'UG', 'PG', 'Girls', 'School'];
 
-function formatDate(iso) {
-  const d = new Date(iso);
-  return isNaN(d) ? iso : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 function ScholarshipDetail({ id }) {
   const navigate = useNavigate();
   const [scheme, setScheme] = useState(undefined); // undefined = loading, null = not found
 
   useEffect(() => {
     let cancelled = false;
-    getScholarshipById(id).then(data => { if (!cancelled) setScheme(data); });
+    getScholarshipById(id).then(data => { if (!cancelled) { rememberItems(data ? [data] : []); setScheme(data); } });
     return () => { cancelled = true; };
   }, [id]);
 
@@ -50,6 +47,7 @@ function ScholarshipDetail({ id }) {
         <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">{scheme.name}</h2>
         <p className="text-sm text-amber-200/90 font-semibold mt-1">{scheme.offeredBy}</p>
         {scheme.description && <p className="text-sm text-white/70 mt-3">{scheme.description}</p>}
+        {scheme.sourceNote && <p className="text-[11px] text-white/45 mt-2">{scheme.sourceNote}</p>}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-5">
           <div className="glass-well p-3">
@@ -61,8 +59,8 @@ function ScholarshipDetail({ id }) {
             <p className="text-xs font-bold text-white mt-0.5">{scheme.level}</p>
           </div>
           <div className="glass-well p-3 col-span-2 sm:col-span-1">
-            <span className="eyebrow">Deadline</span>
-            <p className="text-sm font-bold text-amber-300 mt-0.5">{formatDate(scheme.deadline)}</p>
+            <span className="eyebrow">When to apply</span>
+            <p className="text-xs font-bold text-amber-200 mt-0.5">{deadlineText(scheme) || scheme.applicationWindow || 'Check the official portal'}</p>
           </div>
         </div>
 
@@ -103,6 +101,7 @@ function ScholarshipDetail({ id }) {
             <BookmarkPlus className="w-4 h-4" />
             <span>Track Application</span>
           </button>
+          <SaveButton itemId={scheme.id} name={scheme.name} className="self-center !p-3" />
         </div>
       </section>
     </div>
@@ -119,7 +118,7 @@ function ScholarshipFinder() {
 
   useEffect(() => {
     let cancelled = false;
-    getScholarships(filterTag.toLowerCase(), debouncedQuery).then(data => { if (!cancelled) setScholarships(data); });
+    getScholarships(filterTag.toLowerCase(), debouncedQuery).then(data => { if (!cancelled) { rememberItems(data); setScholarships(data); } });
     return () => { cancelled = true; };
   }, [debouncedQuery, filterTag]);
 
@@ -188,14 +187,17 @@ function ScholarshipFinder() {
                 <p className="text-xs text-white/60 mt-0.5">{sch.offeredBy}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="text-xs font-black text-emerald-300">{sch.amount}</span>
-                  <span className="text-[11px] text-amber-300 font-bold flex items-center gap-1">
-                    <CalendarClock className="w-3 h-3" /> {formatDate(sch.deadline)}
-                  </span>
+                  {sch.applicationWindow && (
+                    <span className="text-[11px] text-amber-200/90 font-semibold flex items-center gap-1">
+                      <CalendarClock className="w-3 h-3 flex-shrink-0" /> {deadlineText(sch) || sch.applicationWindow}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-            <span className="text-xs text-white/80 font-bold flex items-center gap-1 self-end sm:self-center">
-              Details <ChevronRight className="w-4 h-4" />
+            <span className="flex items-center gap-2 self-end sm:self-center flex-shrink-0">
+              <SaveButton itemId={sch.id} name={sch.name} />
+              <span className="text-xs text-white/80 font-bold flex items-center gap-1">Details <ChevronRight className="w-4 h-4" /></span>
             </span>
           </Link>
         ))}

@@ -1,51 +1,340 @@
-// frontend/src/components/EmergencyCenter.jsx — NIVRA Emergency & Disaster Center
-import React, { useState, useEffect } from 'react';
-import { getEmergencyData } from '../services/api';
+// frontend/src/components/EmergencyCenter.jsx — real location, weather, alerts and nearby help
+import React, { useState, useEffect, useCallback } from 'react';
+import { getJSON } from '../services/http';
+import { analyzePhoto } from '../services/api';
 import { reports } from '../services/userApi';
+import { useLocationCtx } from '../context/LocationContext';
+import FacilityMap, { TYPE_STYLE } from './FacilityMap';
 import { FormError } from './LoginScreen';
+import useDebounce from '../hooks/useDebounce';
+import { useLanguage } from '../context/LanguageContext';
 import {
-  ShieldAlert, PhoneCall, MapPin, Hospital, Flame, Ambulance, Building, Pill,
-  CloudRain, Navigation, Layers, Sun, AlertTriangle, Crosshair, Tent, Megaphone, X, CheckCircle2, Loader2
+  ShieldAlert, PhoneCall, Navigation, Crosshair, Search, Loader2, CloudRain, Thermometer,
+  Droplets, Wind, AlertTriangle, Megaphone, X, CheckCircle2, ScanEye, Radio, MapPin, ExternalLink,
 } from 'lucide-react';
+import ModalPortal from './ModalPortal';
 
-const FILTERS = ['All', 'Hospital', 'Ambulance', 'Police Station', 'Fire Station', 'Pharmacy'];
-const MARKER_POSITIONS = [
-  { top: '22%', left: '22%' }, { top: '30%', left: '76%' }, { top: '70%', left: '30%' },
-  { top: '64%', left: '78%' }, { top: '16%', left: '52%' },
+const HELPLINES = [
+  { number: '112', label: 'hl_all' },
+  { number: '108', label: 'hl_ambulance' },
+  { number: '100', label: 'hl_police' },
+  { number: '101', label: 'hl_fire' },
+  { number: '1070', label: 'hl_disaster' },
+  { number: '1098', label: 'hl_child' },
+  { number: '181', label: 'hl_women' },
 ];
-const USER_LOCATION = { city: 'Hyderabad, Telangana', lat: '17.3850° N', lng: '78.4867° E' };
 
-function TypeIcon({ type, className = 'w-5 h-5' }) {
-  switch (type) {
-    case 'Hospital':       return <Hospital className={`${className} text-emerald-300`} />;
-    case 'Fire Station':   return <Flame className={`${className} text-amber-300`} />;
-    case 'Ambulance':      return <Ambulance className={`${className} text-red-300`} />;
-    case 'Police Station': return <Building className={`${className} text-cyan-300`} />;
-    case 'Pharmacy':       return <Pill className={`${className} text-pink-300`} />;
-    default:               return <ShieldAlert className={`${className} text-red-300`} />;
-  }
-}
+const FILTERS = [
+  ['all', 'All'], ['hospital', 'Hospitals'], ['police', 'Police'], ['fire', 'Fire'], ['pharmacy', 'Pharmacies'], ['shelter', 'Shelters'],
+];
 
-const openNavigation = (name, address) => {
-  const query = encodeURIComponent([name, address].filter(Boolean).join(', '));
-  window.open(`https://www.google.com/maps/dir/?api=1&destination=${query}`, '_blank', 'noopener');
+const LEVEL_STYLE = {
+  red: 'border-red-400/50 bg-red-500/15 text-red-100',
+  orange: 'border-orange-300/50 bg-orange-500/15 text-orange-100',
+  yellow: 'border-yellow-300/40 bg-yellow-400/10 text-yellow-50',
 };
 
-function ReportModal({ onClose }) {
-  const [form, setForm] = useState({ category: 'Flooding', location: '', description: '', severity: 'HIGH', contactNumber: '' });
+const openDirections = (f) =>
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${f.lat},${f.lng}`, '_blank', 'noopener');
+
+// ─────────────── Location picker ───────────────
+function LocationBar() {
+  const { location, status, error, locateMe, choosePlace } = useLocationCtx();
+  const { t } = useLanguage();
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const debounced = useDebounce(q.trim(), 300);
+
+  useEffect(() => {
+    if (debounced.length < 2) { setResults([]); return; }
+    let cancelled = false;
+    setSearching(true);
+    getJSON('/geo/search', { q: debounced })
+      .then(r => { if (!cancelled) setResults(r.results); })
+      .catch(() => { if (!cancelled) setResults([]); })
+      .finally(() => { if (!cancelled) setSearching(false); });
+    return () => { cancelled = true; };
+  }, [debounced]);
+
+  return (
+    <section className="glass-panel p-4 space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="service-icon-box flex-shrink-0" style={{ background: 'rgba(255,181,71,0.18)', color: '#FFB547' }}>
+            <MapPin className="w-6 h-6" />
+          </div>
+          <div className="min-w-0">
+            <p className="eyebrow">{location ? (location.source === 'gps' ? 'Your location' : 'Selected place') : 'Location'}</p>
+            <h2 className="font-extrabold text-white text-base truncate">{location?.label || 'Not set yet'}</h2>
+            {location?.accuracyM && <p className="text-[11px] text-white/45">GPS accurate to ~{location.accuracyM} m</p>}
+          </div>
+        </div>
+        <button onClick={locateMe} disabled={status === 'locating'} className="btn-primary !py-2 !px-4 text-xs self-start sm:self-center">
+          {status === 'locating' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4" />}
+          {location?.source === 'gps' ? t.update_location : t.use_location}
+        </button>
+      </div>
+
+      <div className="relative">
+        <div className="search-glow-wrapper">
+          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-white/40 z-10 pointer-events-none" />
+          <input
+            type="search"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder={t.search_place}
+            aria-label="Search for a place"
+            className="input-glass pl-11 py-2.5 text-xs"
+          />
+        </div>
+        {(results.length > 0 || searching) && (
+          <ul className="absolute left-0 right-0 top-full mt-2 z-[500] glass-panel glass-modal p-1.5 max-h-64 overflow-y-auto" role="listbox">
+            {searching && <li className="px-3 py-2 text-xs text-white/50">Searching…</li>}
+            {results.map(r => (
+              <li key={`${r.lat},${r.lng}`}>
+                <button
+                  onClick={() => { choosePlace(r); setQ(''); setResults([]); }}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 text-sm text-white"
+                  role="option"
+                  aria-selected="false"
+                >
+                  {r.name} <span className="text-white/50 text-xs">{[r.district !== r.name && r.district, r.state].filter(Boolean).join(', ')}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <FormError message={error} />
+    </section>
+  );
+}
+
+// ─────────────── Weather + alerts ───────────────
+function ConditionsPanel({ location }) {
+  const { t } = useLanguage();
+  const [weather, setWeather] = useState(null);
+  const [alerts, setAlerts] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setWeather(null); setError('');
+    getJSON('/geo/weather', { lat: location.lat, lng: location.lng })
+      .then(w => { if (!cancelled) setWeather(w); })
+      .catch(err => { if (!cancelled) setError(err.message); });
+    setAlerts(null);
+    getJSON('/geo/alerts', { state: location.state || undefined })
+      .then(a => { if (!cancelled) setAlerts(a.alerts); })
+      .catch(() => { if (!cancelled) setAlerts(false); });
+    return () => { cancelled = true; };
+  }, [location.lat, location.lng, location.state]);
+
+  return (
+    <>
+      <section className="glass-panel p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-base font-bold text-white">{t.weather_now}</h3>
+          {weather && <a href={weather.source.url} target="_blank" rel="noreferrer" className="text-[10px] text-white/40">Source: {weather.source.name}</a>}
+        </div>
+        {error && <FormError message={error} />}
+        {!weather && !error && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-amber-300" /></div>}
+        {weather && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="glass-well p-3">
+              <p className="eyebrow flex items-center gap-1"><Thermometer className="w-3 h-3" /> Temp</p>
+              <p className="text-xl font-black text-amber-200">{Math.round(weather.current.temperature)}°C</p>
+              <p className="text-[11px] text-white/50">feels {Math.round(weather.current.feelsLike)}°C · {weather.current.condition}</p>
+            </div>
+            <div className="glass-well p-3">
+              <p className="eyebrow flex items-center gap-1"><CloudRain className="w-3 h-3" /> Rain today</p>
+              <p className="text-xl font-black text-cyan-200">{Math.round(weather.today.rainMm ?? 0)} mm</p>
+              <p className="text-[11px] text-white/50">{weather.today.rainChance ?? 0}% chance</p>
+            </div>
+            <div className="glass-well p-3">
+              <p className="eyebrow flex items-center gap-1"><Droplets className="w-3 h-3" /> Humidity</p>
+              <p className="text-xl font-black text-white">{weather.current.humidity}%</p>
+            </div>
+            <div className="glass-well p-3">
+              <p className="eyebrow flex items-center gap-1"><Wind className="w-3 h-3" /> Wind</p>
+              <p className="text-xl font-black text-white">{Math.round(weather.current.windSpeed)} <span className="text-xs">km/h</span></p>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {weather?.advisories?.length > 0 && (
+        <section className="space-y-2">
+          {weather.advisories.map(a => (
+            <div key={a.type} className={`rounded-2xl border px-4 py-3 ${LEVEL_STYLE[a.level]}`} role="alert">
+              <p className="font-extrabold text-sm flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> {a.title}</p>
+              <p className="text-xs opacity-90 mt-0.5">{a.detail}</p>
+              <p className="text-[10px] opacity-60 mt-1">Forecast-based guidance, not an official warning. Follow IMD and local authority instructions.</p>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="glass-panel p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-base font-bold text-white flex items-center gap-2"><Radio className="w-4 h-4 text-red-300" /> {t.official_alerts}{location.state ? ` · ${location.state}` : ''}</h3>
+          <a href="https://sachet.ndma.gov.in" target="_blank" rel="noreferrer" className="text-[10px] text-white/40">NDMA SACHET</a>
+        </div>
+        {alerts === null && <p className="text-xs text-white/50">Checking for alerts…</p>}
+        {alerts === false && <p className="text-xs text-white/50">Official alerts couldn't be loaded right now. Check <a className="text-amber-200 underline" href="https://sachet.ndma.gov.in" target="_blank" rel="noreferrer">sachet.ndma.gov.in</a>.</p>}
+        {alerts?.length === 0 && <p className="text-xs text-white/60">No official alerts in the last 48 hours{location.state ? ` for ${location.state}` : ''}.</p>}
+        {alerts?.length > 0 && (
+          <ul className="space-y-2">
+            {alerts.slice(0, 5).map((a, i) => (
+              <li key={i} className="glass-well p-3">
+                <p className="text-sm font-bold text-white">{a.title}</p>
+                {a.description && <p className="text-xs text-white/70 mt-0.5 line-clamp-3">{a.description}</p>}
+                <p className="text-[10px] text-white/40 mt-1">
+                  {a.published && new Date(a.published).toLocaleString()}
+                  {a.link && <> · <a href={a.link} target="_blank" rel="noreferrer" className="text-amber-200">details</a></>}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  );
+}
+
+// ─────────────── Nearby facilities ───────────────
+function NearbyHelp({ location }) {
+  const { t } = useLanguage();
+  const [facilities, setFacilities] = useState(null);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [selectedId, setSelectedId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFacilities(null); setError('');
+    getJSON('/geo/facilities', { lat: location.lat, lng: location.lng, radiusKm: 5 })
+      .then(r => { if (!cancelled) setFacilities(r.facilities); })
+      .catch(err => { if (!cancelled) { setError(err.message); setFacilities([]); } });
+    return () => { cancelled = true; };
+  }, [location.lat, location.lng]);
+
+  const select = useCallback((id) => {
+    setSelectedId(id);
+    document.getElementById(`fac-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, []);
+
+  const visible = (facilities || []).filter(f => filter === 'all' || f.type === filter);
+  const counts = (facilities || []).reduce((acc, f) => ({ ...acc, [f.type]: (acc[f.type] || 0) + 1 }), {});
+
+  return (
+    <section className="glass-panel p-4 space-y-3">
+      <div>
+        <h3 className="text-base font-bold text-white">{t.help_near_you}</h3>
+        <p className="text-xs text-white/55">Within 5 km, from OpenStreetMap. Details can be out of date. Call ahead when you can.</p>
+      </div>
+
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+        {FILTERS.map(([key, label]) => (
+          <button key={key} onClick={() => setFilter(key)} className={`chip ${filter === key ? 'active' : ''}`}>
+            {key !== 'all' && <span aria-hidden="true">{TYPE_STYLE[key].emoji}</span>}
+            {label}{key !== 'all' && counts[key] ? ` (${counts[key]})` : ''}
+          </button>
+        ))}
+      </div>
+
+      <FacilityMap center={location} facilities={visible} selectedId={selectedId} onSelect={select} />
+
+      {facilities === null && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-amber-300" /></div>}
+      <FormError message={error} />
+      {facilities && !error && visible.length === 0 && (
+        <p className="text-xs text-white/60 text-center py-3">Nothing of this type is mapped within 5 km. In an emergency call 112.</p>
+      )}
+
+      <ul className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+        {visible.slice(0, 30).map(f => (
+          <li
+            key={f.id}
+            id={`fac-${f.id}`}
+            className={`glass-card p-3 flex items-center justify-between gap-3 cursor-pointer ${selectedId === f.id ? 'ring-1 ring-amber-300/60' : ''}`}
+            onClick={() => setSelectedId(f.id)}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-xl flex-shrink-0" aria-hidden="true">{TYPE_STYLE[f.type].emoji}</span>
+              <div className="min-w-0">
+                <h4 className="font-bold text-white text-sm truncate">{f.name}</h4>
+                <p className="text-[11px] text-white/55 truncate">
+                  {f.typeLabel} · {f.distanceKm} km{f.emergency ? ' · 24×7 emergency' : ''}{f.address ? ` · ${f.address}` : ''}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {f.phone && (
+                <a href={`tel:${f.phone.split(/[;,/]/)[0].trim()}`} onClick={e => e.stopPropagation()} className="btn-icon" aria-label={`Call ${f.name}`} title={f.phone}>
+                  <PhoneCall className="w-4 h-4" />
+                </a>
+              )}
+              <button onClick={e => { e.stopPropagation(); openDirections(f); }} className="btn-icon" aria-label={`Directions to ${f.name}`}>
+                <Navigation className="w-4 h-4" />
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {filter === 'shelter' && (
+        <p className="text-[11px] text-white/55">
+          Official relief camps are announced by your State Disaster Management Authority. Call <a href="tel:1070" className="text-amber-200 font-bold">1070</a> to find the nearest open camp.
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ─────────────── Report form ───────────────
+const CATEGORY_FOR = { flood: 'Flooding', fire: 'Fire', structural_damage: 'Building Collapse', landslide: 'Landslide', road_blocked: 'Road Blocked', electrical: 'Power Line Down' };
+
+function ReportModal({ location, onClose }) {
+  const [form, setForm] = useState({
+    category: 'Flooding', location: location?.label || '', description: '', severity: 'HIGH', contactNumber: '',
+  });
+  const [attachCoords, setAttachCoords] = useState(!!location);
   const [image, setImage] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | sending | done
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
 
   const update = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
+  const onImage = async (file) => {
+    setImage(file || null);
+    setAnalysis(null);
+    if (!file) return;
+    setAnalyzing(true);
+    try {
+      const a = await analyzePhoto(file, form.description);
+      setAnalysis(a);
+      if (a.success) {
+        // pre-fill from the photo; the user can still change anything
+        setForm(f => ({
+          ...f,
+          category: CATEGORY_FOR[a.hazardType] || f.category,
+          severity: ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].includes(a.severity) ? a.severity : f.severity,
+          description: f.description || a.summary,
+        }));
+      }
+    } catch { setAnalysis(null); } finally { setAnalyzing(false); }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
-    setStatus('sending');
-    setError('');
+    setStatus('sending'); setError('');
     try {
-      setResult(await reports.submit(form, image));
+      const coords = attachCoords && location ? { lat: location.lat, lng: location.lng } : {};
+      setResult(await reports.submit({ ...form, ...coords }, image));
       setStatus('done');
     } catch (err) {
       setError(err.message);
@@ -54,7 +343,7 @@ function ReportModal({ onClose }) {
   };
 
   return (
-    <div className="modal-backdrop z-[150]" onClick={e => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label="Report a disaster issue">
+    <ModalPortal><div className="modal-backdrop z-[1500]" onClick={e => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label="Report a disaster issue">
       <div className="glass-panel glass-modal p-6 max-w-md w-full max-h-[90vh] overflow-y-auto" style={{ borderRadius: 'var(--r-xl)' }}>
         <button onClick={onClose} className="btn-icon absolute top-4 right-4" aria-label="Close"><X className="w-4 h-4" /></button>
 
@@ -70,9 +359,22 @@ function ReportModal({ onClose }) {
           </div>
         ) : (
           <>
-            <h3 className="text-lg font-extrabold text-white mb-1 flex items-center gap-2"><Megaphone className="w-5 h-5 text-red-300" /> Report a disaster issue</h3>
-            <p className="text-xs text-white/60 mb-4">Your report is shared with the local response team. In danger right now? Call 112.</p>
+            <h3 className="text-lg font-extrabold text-white mb-1 flex items-center gap-2"><Megaphone className="w-5 h-5 text-red-300" /> Report a problem</h3>
+            <p className="text-xs text-white/60 mb-4">Reports are reviewed by the response team; you'll see status updates under Profile → My Reports. <b className="text-white">If anyone is in danger, call 112 first.</b></p>
             <form onSubmit={submit} className="space-y-3">
+              <label className="block">
+                <span className="block text-xs font-bold text-white/70 mb-1">Photo (optional, helps responders)</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => onImage(e.target.files[0])} className="text-xs text-white/70 file:mr-3 file:border-0 file:rounded-full file:px-3 file:py-1.5 file:bg-white/10 file:text-white" />
+              </label>
+              {analyzing && <p className="text-xs text-white/60 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analysing photo…</p>}
+              {analysis?.success && (
+                <div className="glass-well p-3 text-xs">
+                  <p className="font-bold text-cyan-200 flex items-center gap-1.5"><ScanEye className="w-3.5 h-3.5" /> Photo looks like: <span className="capitalize">{analysis.hazardType.replace('_', ' ')}</span> ({analysis.confidence} confidence)</p>
+                  <p className="text-white/70 mt-1">{analysis.summary}</p>
+                  <p className="text-white/40 mt-1">We've pre-filled the form. Please check it.</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
                   <span className="block text-xs font-bold text-white/70 mb-1">Type</span>
@@ -92,22 +394,24 @@ function ReportModal({ onClose }) {
               </div>
               <label className="block">
                 <span className="block text-xs font-bold text-white/70 mb-1">Location</span>
-                <input required value={form.location} onChange={update('location')} placeholder="Street, landmark, area" className="input-glass text-sm !py-2.5" />
+                <input required minLength={3} value={form.location} onChange={update('location')} placeholder="Street, landmark, area" className="input-glass text-sm !py-2.5" />
               </label>
+              {location && (
+                <label className="flex items-center gap-2 text-xs text-white/70">
+                  <input type="checkbox" checked={attachCoords} onChange={e => setAttachCoords(e.target.checked)} className="accent-amber-400" />
+                  Attach my map position ({location.lat.toFixed(4)}, {location.lng.toFixed(4)})
+                </label>
+              )}
               <label className="block">
                 <span className="block text-xs font-bold text-white/70 mb-1">What's happening?</span>
-                <textarea required rows={3} value={form.description} onChange={update('description')} placeholder="Describe the situation" className="input-glass text-sm !rounded-2xl resize-none" />
+                <textarea required minLength={5} rows={3} value={form.description} onChange={update('description')} placeholder="Describe the situation" className="input-glass text-sm !rounded-2xl resize-none" />
               </label>
               <label className="block">
                 <span className="block text-xs font-bold text-white/70 mb-1">Contact number (optional)</span>
                 <input type="tel" value={form.contactNumber} onChange={update('contactNumber')} placeholder="+91" className="input-glass text-sm !py-2.5" />
               </label>
-              <label className="block">
-                <span className="block text-xs font-bold text-white/70 mb-1">Photo (optional)</span>
-                <input type="file" accept="image/*" onChange={e => setImage(e.target.files[0] || null)} className="text-xs text-white/70 file:mr-3 file:border-0 file:rounded-full file:px-3 file:py-1.5 file:bg-white/10 file:text-white" />
-              </label>
               <FormError message={error} />
-              <button type="submit" disabled={status === 'sending'} className="btn-emergency w-full justify-center !py-3 text-sm !animate-none">
+              <button type="submit" disabled={status === 'sending' || analyzing} className="btn-emergency w-full justify-center !py-3 text-sm !animate-none">
                 {status === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
                 Submit report
               </button>
@@ -115,254 +419,55 @@ function ReportModal({ onClose }) {
           </>
         )}
       </div>
-    </div>
+    </div></ModalPortal>
   );
 }
 
+// ─────────────── Page ───────────────
 export default function EmergencyCenter() {
-  const [facilities, setFacilities] = useState([]);
-  const [shelters, setShelters] = useState([]);
-  const [filterType, setFilterType] = useState('All');
-  const [selectedId, setSelectedId] = useState(null);
-  const [mapMode, setMapMode] = useState('satellite');
+  const { location } = useLocationCtx();
+  const { t } = useLanguage();
   const [showReport, setShowReport] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getEmergencyData(filterType === 'All' ? 'all' : filterType).then(data => {
-      if (cancelled) return;
-      setFacilities(data.emergencyFacilities || []);
-      setShelters(data.disasterShelters || []);
-    });
-    return () => { cancelled = true; };
-  }, [filterType]);
-
-  const focusFacility = (id) => {
-    setSelectedId(id);
-    document.getElementById(`fac-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
 
   return (
     <div className="space-y-5 fade-in max-w-4xl mx-auto pb-6">
-
-      {/* Location & weather */}
-      <section className="glass-panel p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="service-icon-box flex-shrink-0" style={{ background: 'rgba(255,181,71,0.18)', color: '#FFB547' }}>
-            <Sun className="w-6 h-6 animate-spin-slow" />
-          </div>
-          <div>
-            <span className="text-[10px] text-emerald-300 font-bold flex items-center gap-1">
-              <Crosshair className="w-3 h-3" /> Location
-            </span>
-            <h3 className="font-extrabold text-white text-base">{USER_LOCATION.city}</h3>
-            <p className="text-xs text-white/55 font-mono">{USER_LOCATION.lat}, {USER_LOCATION.lng}</p>
-          </div>
-        </div>
-
-        <div className="glass-well flex items-center gap-4 px-4 py-2 w-full md:w-auto justify-around">
-          <div className="text-center">
-            <p className="eyebrow !text-[9px]">Weather</p>
-            <p className="text-sm font-black text-amber-300">28°C</p>
-          </div>
-          <div className="h-6 w-px bg-white/10" />
-          <div className="text-center">
-            <p className="eyebrow !text-[9px]">Humidity</p>
-            <p className="text-sm font-black text-cyan-300">74%</p>
-          </div>
-          <div className="h-6 w-px bg-white/10" />
-          <div className="text-center">
-            <p className="eyebrow !text-[9px]">Risk</p>
-            <p className="text-xs font-extrabold text-red-300 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Heavy Rain</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Alert */}
-      <section className="alert-banner flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <CloudRain className="w-6 h-6 text-red-300 flex-shrink-0" />
-          <div>
-            <span className="badge badge-red !text-[9px] mb-0.5">Disaster Alert</span>
-            <h4 className="font-extrabold text-white text-sm">Heavy Rain & Flood Warning — {USER_LOCATION.city}</h4>
-            <p className="text-xs text-red-100/80 mt-0.5">Continuous rainfall expected over the next 12 hours. High alert for low-lying areas.</p>
-          </div>
-        </div>
-        <button onClick={() => setShowReport(true)} className="btn-secondary !py-2 !px-4 text-xs self-start sm:self-center flex-shrink-0">
-          <Megaphone className="w-4 h-4 text-red-300" /> Report issue
-        </button>
-      </section>
-
-      {/* Filters & map */}
+      {/* Helplines first: they work with no location and no internet */}
       <section className="glass-panel p-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
-          <div>
-            <h2 className="text-xl font-black text-white">Emergency Services</h2>
-            <p className="text-xs text-white/60">Tap a marker or facility for directions</p>
-          </div>
-
-          <div className="liquid-pill rounded-full p-1 flex items-center gap-1">
-            {[['satellite', '🛰️ Satellite'], ['radar', '🗺️ Radar']].map(([mode, label]) => (
-              <button
-                key={mode}
-                onClick={() => setMapMode(mode)}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${mapMode === mode ? 'bg-white/90 text-slate-900 shadow' : 'text-white/70 hover:text-white'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h2 className="text-xl font-black text-white flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-red-300" /> {t.emergency}</h2>
+          <button onClick={() => setShowReport(true)} className="btn-secondary !py-2 !px-3 text-xs">
+            <Megaphone className="w-4 h-4 text-red-300" /> {t.report_problem}
+          </button>
         </div>
-
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-          {FILTERS.map(cat => (
-            <button key={cat} onClick={() => setFilterType(cat)} className={`chip ${filterType === cat ? 'active' : ''}`}>
-              {cat === 'All' ? 'All' : cat + 's'}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between mt-4 mb-2">
-          <span className="text-xs font-bold text-white/70 flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-amber-300" /> {mapMode === 'satellite' ? 'Satellite imagery' : 'Radar view'}
-          </span>
-          <span className="text-[11px] text-white/45 font-mono">Simulated map</span>
-        </div>
-
-        <div
-          className="relative w-full h-72 rounded-2xl overflow-hidden flex items-center justify-center border border-white/10"
-          style={{
-            backgroundImage: mapMode === 'satellite'
-              ? 'radial-gradient(circle at 50% 50%, rgba(13, 27, 42, 0.75), rgba(5, 11, 24, 0.95)), url("https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=1000&auto=format&fit=crop")'
-              : 'repeating-linear-gradient(0deg, rgba(95,212,255,0.08) 0 1px, transparent 1px 32px), repeating-linear-gradient(90deg, rgba(95,212,255,0.08) 0 1px, transparent 1px 32px)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundColor: '#050b18',
-          }}
-        >
-          <div className="absolute w-52 h-52 rounded-full border border-amber-300/20 animate-ping opacity-30 pointer-events-none" />
-          <div className="absolute w-32 h-32 rounded-full border border-cyan-300/30 pointer-events-none" />
-
-          <div className="absolute z-20 flex flex-col items-center">
-            <div className="w-5 h-5 rounded-full bg-amber-300 border-2 border-white shadow-2xl animate-pulse" />
-            <span className="liquid-pill text-[10px] font-extrabold text-white px-2 py-0.5 rounded-full mt-1">You</span>
-          </div>
-
-          {facilities.map((fac, i) => {
-            const pos = MARKER_POSITIONS[i % MARKER_POSITIONS.length];
-            const active = selectedId === fac.id;
-            return (
-              <div key={fac.id} style={{ top: pos.top, left: pos.left }} className="absolute z-30 group">
-                <button
-                  onClick={() => focusFacility(fac.id)}
-                  className={`p-2 rounded-full border-2 border-white shadow-2xl transition-transform hover:scale-125 ${active ? 'bg-amber-400 scale-125' : 'bg-red-500'}`}
-                  title={fac.name}
-                  aria-label={fac.name}
-                >
-                  <MapPin className="w-4 h-4 text-white" />
-                </button>
-                <div className={`${active ? 'flex' : 'hidden group-hover:flex'} absolute -top-8 left-1/2 -translate-x-1/2 liquid-pill text-white text-[10px] font-bold px-2 py-1 rounded-md whitespace-nowrap`}>
-                  {fac.name}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Facilities list */}
-      <section className="space-y-3">
-        <h3 className="text-base font-bold text-white px-1">Nearby Facilities</h3>
-        {facilities.length === 0 && (
-          <div className="glass-panel p-6 text-center text-sm text-white/60">No facilities of this type nearby.</div>
-        )}
-        <div className="space-y-3 stagger">
-          {facilities.map(fac => (
-            <div
-              key={fac.id}
-              id={`fac-${fac.id}`}
-              onClick={() => setSelectedId(fac.id)}
-              className={`glass-card p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer ${selectedId === fac.id ? 'ring-1 ring-amber-300/60' : ''}`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="service-icon-box !w-10 !h-10 !rounded-xl flex-shrink-0" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                  <TypeIcon type={fac.type} />
-                </div>
-                <div>
-                  <h4 className="font-extrabold text-white text-sm">{fac.name}</h4>
-                  <p className="text-xs text-white/60 mt-0.5">{fac.address}</p>
-                  <p className="text-[11px] text-white/45">{fac.distance} · {fac.status}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <button
-                  onClick={e => { e.stopPropagation(); openNavigation(fac.name, fac.address); }}
-                  className="btn-primary !py-1.5 !px-3 text-xs"
-                >
-                  <Navigation className="w-3.5 h-3.5" />
-                  <span>Navigate</span>
-                </button>
-                <a
-                  href={`tel:${String(fac.phone).split('/')[0].trim()}`}
-                  className="btn-icon"
-                  onClick={e => e.stopPropagation()}
-                  title={`Call ${fac.phone}`}
-                  aria-label={`Call ${fac.name}`}
-                >
-                  <PhoneCall className="w-4 h-4" />
-                </a>
-              </div>
-            </div>
+        <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+          {HELPLINES.map(h => (
+            <a key={h.number} href={`tel:${h.number}`} className={`glass-card p-2.5 text-center ${h.number === '112' ? 'col-span-3 sm:col-span-1 !bg-red-500/25' : ''}`}>
+              <p className="text-lg font-black text-white font-display">{h.number}</p>
+              <p className="text-[10px] text-white/60 leading-tight">{t[h.label]}</p>
+            </a>
           ))}
         </div>
       </section>
 
-      {/* Relief shelters */}
-      {shelters.length > 0 && (
-        <section className="space-y-3">
-          <h3 className="text-base font-bold text-white px-1">Disaster Relief Shelters</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {shelters.map(sh => (
-              <div key={sh.id} className="glass-card p-4">
-                <div className="flex items-start gap-3">
-                  <div className="service-icon-box !w-10 !h-10 !rounded-xl flex-shrink-0" style={{ background: 'rgba(52,211,153,0.18)', color: '#34D399' }}>
-                    <Tent className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="badge badge-green !text-[9px]">{sh.disasterType}</span>
-                    <h4 className="font-extrabold text-white text-sm mt-1">{sh.name}</h4>
-                    <p className="text-xs text-white/60">{sh.location}</p>
-                    <p className="text-[11px] text-white/50 mt-1">Occupancy {sh.currentOccupancy} / {sh.capacity}</p>
-                  </div>
-                </div>
-                {sh.facilities?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {sh.facilities.map(f => <span key={f} className="badge badge-blue !text-[9px] !normal-case">{f}</span>)}
-                  </div>
-                )}
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => openNavigation(sh.name, sh.location)} className="btn-secondary !py-1.5 !px-3 text-xs">
-                    <Navigation className="w-3.5 h-3.5" /> Directions
-                  </button>
-                  {sh.contactPhone && (
-                    <a href={`tel:${sh.contactPhone.replace(/\s/g, '')}`} className="btn-secondary !py-1.5 !px-3 text-xs">
-                      <PhoneCall className="w-3.5 h-3.5" /> Call
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+      <LocationBar />
+
+      {location ? (
+        <>
+          <ConditionsPanel location={location} />
+          <NearbyHelp location={location} />
+        </>
+      ) : (
+        <section className="glass-panel p-6 text-center text-sm text-white/65">
+          Share your location or search for your town to see the weather, official alerts and the nearest hospitals, police and fire stations.
         </section>
       )}
 
-      <a href="tel:112" className="btn-emergency w-full justify-center !py-4 text-base tracking-wider !rounded-2xl uppercase">
-        <ShieldAlert className="w-6 h-6" />
-        <span>Emergency Help Now · 112</span>
+      <a href="https://ndma.gov.in" target="_blank" rel="noreferrer" className="glass-card p-4 flex items-center justify-between gap-3">
+        <span className="text-sm text-white/80">Disaster safety guides (NDMA)</span>
+        <ExternalLink className="w-4 h-4 text-white/50" />
       </a>
 
-      {showReport && <ReportModal onClose={() => setShowReport(false)} />}
+      {showReport && <ReportModal location={location} onClose={() => setShowReport(false)} />}
     </div>
   );
 }

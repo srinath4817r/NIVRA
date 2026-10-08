@@ -19,6 +19,7 @@ export const trackers = {
   list: () => request('/trackers').then(r => r.data),
   add: (t) => request('/trackers', { method: 'POST', body: t }),
   setStep: (id, stepIndex, done) => request(`/trackers/${id}`, { method: 'PATCH', body: { stepIndex, done } }).then(r => r.tracker),
+  update: (id, patch) => request(`/trackers/${id}`, { method: 'PATCH', body: patch }).then(r => r.tracker),
   remove: (id) => request(`/trackers/${id}`, { method: 'DELETE' }),
 };
 

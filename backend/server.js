@@ -7,6 +7,14 @@ const config = require('./config');
 const db = require('./db');
 const apiRoutes = require('./routes/api');
 
+// Optional error tracking. sendDefaultPii is off (no cookies, IPs or user identities); review
+// Sentry's data-scrubbing settings before enabling it in production.
+let Sentry = null;
+if (config.sentryDsn) {
+  Sentry = require('@sentry/node');
+  Sentry.init({ dsn: config.sentryDsn, sendDefaultPii: false, tracesSampleRate: 0, environment: process.env.VERCEL_ENV || process.env.NODE_ENV });
+}
+
 const app = express();
 
 // Behind Vercel/other proxies: trust the first hop so rate limits see real client IPs
@@ -44,7 +52,10 @@ app.use((err, req, res, next) => {
     message = err.code === 'LIMIT_FILE_SIZE' ? 'Image is too large (max 5 MB).' : err.message;
   }
   if (err.type === 'entity.too.large') message = 'Request is too large.';
-  if (status >= 500) console.error('Unhandled Error:', err);
+  if (status >= 500) {
+    console.error('Unhandled Error:', err);
+    Sentry?.captureException(err, { tags: { route: req.route?.path || req.path } });
+  }
   res.status(status).json({ error: status >= 500 ? 'Something went wrong on our side. Please try again.' : message });
 });
 

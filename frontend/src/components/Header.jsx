@@ -1,23 +1,25 @@
 // frontend/src/components/Header.jsx  — NIVRA Platform
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useLanguage } from '../context/LanguageContext';
+import { useLanguage, LANGUAGES } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { ROUTES } from '../routes';
 import { ShieldAlert, Globe, PhoneCall, X, User } from 'lucide-react';
+import SosContacts from './SosContacts';
+import ModalPortal from './ModalPortal';
 
 const HELPLINES = [
-  { number: '112',  label: 'National Emergency', color: '#FF4D63' },
-  { number: '108',  label: 'Medical Ambulance',  color: '#34D399' },
-  { number: '101',  label: 'Fire & Rescue',      color: '#FFB547' },
-  { number: '1070', label: 'Disaster NDMA',      color: '#5FD4FF' },
+  { number: '112',  label: 'hl_all',       color: '#FF4D63' },
+  { number: '108',  label: 'hl_ambulance', color: '#34D399' },
+  { number: '101',  label: 'hl_fire',      color: '#FFB547' },
+  { number: '1070', label: 'hl_disaster',  color: '#5FD4FF' },
 ];
 
 const avatarFallback = (name) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=FF5FA2&color=fff`;
 
 export default function Header() {
-  const { lang, setLang } = useLanguage();
+  const { lang, setLang, t } = useLanguage();
   const { user } = useAuth();
   const [showSOSModal, setShowSOSModal] = useState(false);
 
@@ -68,12 +70,7 @@ export default function Header() {
                 className="bg-transparent text-xs outline-none cursor-pointer text-white"
                 aria-label="Language"
               >
-                <option value="en" style={{ background: '#17132a' }}>EN</option>
-                <option value="hi" style={{ background: '#17132a' }}>हिंदी</option>
-                <option value="te" style={{ background: '#17132a' }}>తెలుగు</option>
-                <option value="ta" style={{ background: '#17132a' }}>தமிழ்</option>
-                <option value="mr" style={{ background: '#17132a' }}>मराठी</option>
-                <option value="bn" style={{ background: '#17132a' }}>বাংলা</option>
+                {LANGUAGES.map(l => <option key={l.code} value={l.code} style={{ background: '#17132a' }}>{l.label}</option>)}
               </select>
             </label>
 
@@ -106,7 +103,7 @@ export default function Header() {
 
       {/* ── SOS Helpline Modal ── */}
       {showSOSModal && (
-        <div
+        <ModalPortal><div
           className="modal-backdrop z-[200]"
           onClick={e => { if (e.target === e.currentTarget) setShowSOSModal(false); }}
           role="dialog"
@@ -123,8 +120,8 @@ export default function Header() {
                 <ShieldAlert className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="font-display font-bold text-lg text-white">National Emergency Helplines</h3>
-                <p className="text-xs text-white/60">Tap any card to place an instant call</p>
+                <h3 className="font-display font-bold text-lg text-white">{t.sos_title}</h3>
+                <p className="text-xs text-white/60">{t.sos_sub}</p>
               </div>
             </div>
 
@@ -132,15 +129,19 @@ export default function Header() {
               {HELPLINES.map(({ number, label, color }) => (
                 <a key={number} href={`tel:${number}`} className="glass-card p-4 flex items-center justify-between">
                   <div>
-                    <p className="text-[10px] font-bold uppercase mb-0.5" style={{ color }}>{label}</p>
+                    <p className="text-[10px] font-bold uppercase mb-0.5" style={{ color }}>{t[label]}</p>
                     <p className="text-2xl font-black text-white font-display">{number}</p>
                   </div>
                   <PhoneCall className="w-5 h-5" style={{ color }} />
                 </a>
               ))}
             </div>
+
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <SosContacts onNavigate={() => setShowSOSModal(false)} />
+            </div>
           </div>
-        </div>
+        </div></ModalPortal>
       )}
     </>
   );

@@ -3,6 +3,7 @@ import React, { createContext, useState, useContext, useEffect, useCallback } fr
 import { auth } from '../services/userApi';
 
 const AuthContext = createContext();
+const LAST_USER_KEY = 'nivra_last_user_v1';
 
 export const AuthProvider = ({ children }) => {
   // authStatus: 'AUTH_LOADING' | 'AUTHENTICATED' | 'UNAUTHENTICATED'
@@ -15,6 +16,11 @@ export const AuthProvider = ({ children }) => {
   const applyUser = useCallback((u) => {
     setUser(u);
     setAuthStatus(u ? 'AUTHENTICATED' : 'UNAUTHENTICATED');
+    // remember who was signed in so the app (helplines, saved location) still opens offline
+    try {
+      if (u) localStorage.setItem(LAST_USER_KEY, JSON.stringify({ id: u.id, name: u.name, avatar: u.avatar, provider: u.provider, isGuest: u.isGuest, profile: u.profile, emergencyContacts: u.emergencyContacts }));
+      else localStorage.removeItem(LAST_USER_KEY);
+    } catch { /* storage unavailable */ }
   }, []);
 
   const boot = useCallback(async () => {
@@ -24,12 +30,27 @@ export const AuthProvider = ({ children }) => {
       setAuthConfig(cfg);
       applyUser(me.user);
     } catch (err) {
+      // No network: open with the last signed-in user instead of the login screen
+      let last = null;
+      try { last = JSON.parse(localStorage.getItem(LAST_USER_KEY)); } catch { /* ignore */ }
+      if (err.status === 0 && last) {
+        setUser({ ...last, offline: true });
+        setAuthStatus('AUTHENTICATED');
+        return;
+      }
       setBootError(err.message);
       applyUser(null);
     }
   }, [applyUser]);
 
   useEffect(() => { boot(); }, [boot]);
+
+  // back online after an offline start: confirm the real session
+  useEffect(() => {
+    if (!user?.offline) return;
+    window.addEventListener('online', boot);
+    return () => window.removeEventListener('online', boot);
+  }, [user?.offline, boot]);
 
   // Each login helper resolves to the user or throws an ApiError with a readable message
   const run = useCallback(async (promise) => {

@@ -9,6 +9,7 @@ export const ROUTES = {
   emergency: '/emergency',
   profile: '/profile',
   admin: '/admin/reports',
+  eligibility: '/eligibility',
 };
 
 // Navigate to the tracker and hand it a service to add

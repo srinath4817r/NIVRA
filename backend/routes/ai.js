@@ -21,13 +21,14 @@ router.post('/chat', limits.ai, validate({
       role: z.enum(['user', 'assistant']),
       text: z.string().max(4000),
     })).max(12).default([]),
+    language: z.enum(['en', 'hi', 'te', 'ta', 'mr', 'bn']).default('en'),
   }),
 }), async (req, res) => {
-  const { query, history } = req.valid.body;
+  const { query, history, language } = req.valid.body;
 
   if (ai.isEnabled()) {
     try {
-      return res.json(await ai.chat(query, { history, profile: req.user?.profile }));
+      return res.json(await ai.chat(query, { history, profile: req.user?.profile, language }));
     } catch (err) {
       console.error('Claude chat failed, using basic mode:', err.status || '', err.message);
     }

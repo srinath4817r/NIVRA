@@ -1,14 +1,16 @@
 // frontend/src/components/LoginScreen.jsx — NIVRA Liquid Glass Login
 import React, { useState, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage, LANGUAGES } from '../context/LanguageContext';
 import GoogleSignInButton from './GoogleSignInButton';
 import { Smartphone, Mail, ArrowRight, X, CheckCircle2, Loader2, KeyRound, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import ModalPortal from './ModalPortal';
 
 const OTP_LENGTH = 6;
 
 function Modal({ children, onClose, locked, label }) {
   return (
-    <div
+    <ModalPortal><div
       className="modal-backdrop z-[1000]"
       onClick={e => { if (!locked && e.target === e.currentTarget) onClose(); }}
       role="dialog"
@@ -23,7 +25,7 @@ function Modal({ children, onClose, locked, label }) {
         )}
         {children}
       </div>
-    </div>
+    </div></ModalPortal>
   );
 }
 
@@ -256,6 +258,7 @@ export function EmailFlow({ onClose, initialMode = 'signin' }) {
 
 export default function LoginScreen() {
   const { loginWithGoogle, loginAsGuest, authConfig, bootError, retryBoot } = useAuth();
+  const { t, lang, setLang } = useLanguage();
   const [activeModal, setActiveModal] = useState(null); // 'mobile' | 'email' | null
   const [error, setError] = useState('');
   const [guestBusy, setGuestBusy] = useState(false);
@@ -272,6 +275,18 @@ export default function LoginScreen() {
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 relative">
+      <div className="absolute top-4 right-4 liquid-pill rounded-full p-1 flex gap-0.5 overflow-x-auto max-w-[calc(100vw-2rem)] no-scrollbar" role="group" aria-label="Language">
+        {LANGUAGES.map(l => (
+          <button
+            key={l.code}
+            onClick={() => setLang(l.code)}
+            aria-pressed={lang === l.code}
+            className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap ${lang === l.code ? 'bg-white/90 text-slate-900' : 'text-white/70'}`}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
 
       {/* Brand */}
       <div className="flex flex-col items-center text-center mb-7 w-full max-w-[400px] fade-in">
@@ -285,7 +300,7 @@ export default function LoginScreen() {
         <p className="text-[11px] font-extrabold text-amber-200 tracking-[0.18em] uppercase mt-2">
           Navigate · Inform · Verify · Reach · Assist
         </p>
-        <p className="text-sm font-medium text-white/75 mt-1.5">Your services. Simplified.</p>
+        <p className="text-sm font-medium text-white/75 mt-1.5">{t.login_tagline}</p>
       </div>
 
       {/* Card */}
@@ -304,13 +319,13 @@ export default function LoginScreen() {
             {authConfig.mobileEnabled && (
               <button onClick={() => setActiveModal('mobile')} className="btn-secondary w-full justify-center !py-3.5 text-sm">
                 <Smartphone className="w-[18px] h-[18px] text-amber-300" />
-                Continue with Mobile
+                {t.login_mobile}
               </button>
             )}
 
             <button onClick={() => setActiveModal('email')} className="btn-secondary w-full justify-center !py-3.5 text-sm">
               <Mail className="w-[18px] h-[18px] text-purple-300" />
-              Continue with Email
+              {t.login_email}
             </button>
 
             <div className="flex items-center gap-3 my-1">
@@ -320,7 +335,7 @@ export default function LoginScreen() {
             </div>
 
             <button onClick={onGuest} disabled={guestBusy} className="btn-primary w-full justify-center !py-3.5 text-sm">
-              {guestBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Explore as Guest <ArrowRight className="w-[18px] h-[18px]" /></>}
+              {guestBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <>{t.login_guest} <ArrowRight className="w-[18px] h-[18px]" /></>}
             </button>
             <p className="text-[10px] text-center text-white/45 -mt-1">Guest data stays on this device. Create an account later to keep it.</p>
 

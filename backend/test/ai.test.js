@@ -72,6 +72,16 @@ test('signed-in user profile is passed to Claude', async () => {
   assert.match(calls[0].messages.at(-1).content, /category SC, family income ₹200000/);
 });
 
+test('app language is passed in the user turn, not the cached system prompt', async () => {
+  ai.setClient(fakeClient(() => answer()));
+  await request(app).post('/api/ai/chat').send({ query: 'scholarship', language: 'te' });
+  await request(app).post('/api/ai/chat').send({ query: 'scholarship' });
+  assert.match(calls[0].messages.at(-1).content, /Reply in Telugu/);
+  assert.equal(calls[0].system[0].text, calls[1].system[0].text, 'system prompt identical across languages (cache hit)');
+  assert.doesNotMatch(calls[1].messages.at(-1).content, /Reply in/);
+  assert.equal((await request(app).post('/api/ai/chat').send({ query: 'x', language: 'fr' })).status, 400);
+});
+
 test('refusals get a safe message instead of an error', async () => {
   ai.setClient(fakeClient(() => ({ stop_reason: 'refusal', parsed_output: null })));
   const res = await request(app).post('/api/ai/chat').send({ query: 'something' });
