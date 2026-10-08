@@ -40,3 +40,30 @@ test('mobile OTP sign-in (dev mode shows the code)', async ({ page }) => {
   await page.getByLabel('Digit 1').fill(code);
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
 });
+
+test.describe('when the server is broken the login screen says so', () => {
+  test('not set up yet: shows the server\'s explanation', async ({ page }) => {
+    const message = "This site isn't fully set up yet. If you run it, add JWT_SECRET and DATABASE_URL in your hosting settings and redeploy. Visit /api/health for details.";
+    await page.route('**/api/auth/**', r => r.fulfill({ status: 503, json: { error: message } }));
+    await page.goto('/');
+    await expect(page.getByText("isn't fully set up yet")).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+  });
+
+  test('host error page (not JSON): friendly message instead of "Request failed (500)"', async ({ page }) => {
+    await page.route('**/api/auth/**', r => r.fulfill({ status: 500, contentType: 'text/html', body: '<h1>500 Internal Server Error</h1>' }));
+    await page.goto('/');
+    await expect(page.getByText(/server isn't responding properly right now \(error 500\)/)).toBeVisible();
+    await expect(page.getByText('Request failed (500)')).toHaveCount(0);
+  });
+
+  test('"Try again" recovers once the server is fixed', async ({ page }) => {
+    let broken = true;
+    await page.route('**/api/auth/**', route => (broken ? route.fulfill({ status: 503, json: { error: 'Not ready' } }) : route.continue()));
+    await page.goto('/');
+    await expect(page.getByText('Not ready')).toBeVisible();
+    broken = false;
+    await page.getByRole('button', { name: 'Try again' }).click();
+    await expect(page.getByText('Explore as Guest')).toBeVisible();
+  });
+});

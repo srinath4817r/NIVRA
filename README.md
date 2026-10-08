@@ -25,7 +25,7 @@ backend/    Express 5 API (Vercel-compatible), Postgres (pg) or embedded PGlite
   routes/     auth · user data · content · eligibility · ai · geo
   services/   ai (Claude) · eligibility · geo (Open-Meteo, Nominatim, Overpass, NDMA) · sms · uploads
   data/       scheme catalog (versioned in git)
-  db/         schema.sql (applied automatically on start)
+  db/         schema.js (applied automatically on first use)
 ```
 
 - **Content** (schemes, scholarships) is code in `backend/data/database.js`. **User data** (accounts, trackers, saved items, reports, photos) is in Postgres.
@@ -53,7 +53,7 @@ Copy `backend/.env.example` to `backend/.env` locally. On Vercel, set these unde
 | Variable | Needed for | Notes |
 |---|---|---|
 | `JWT_SECRET` | **Required in production** | Any long random string (`openssl rand -hex 32`). The server refuses to start in production without it. |
-| `DATABASE_URL` | **Required in production** | Postgres connection string ([Neon](https://neon.tech) or [Supabase](https://supabase.com) free tiers work). Without it, Vercel uses an in-memory database that is wiped on every cold start. |
+| `DATABASE_URL` | **Required in production** | Postgres connection string ([Neon](https://neon.tech) or [Supabase](https://supabase.com) free tiers work). Connecting a database from the Vercel dashboard works too: the app also accepts `POSTGRES_URL` and prefixed names such as `STORAGE_URL` / `STORAGE_DATABASE_URL`, and `/api/health` shows which variable it used. Without any, Vercel uses an in-memory database that is wiped on every cold start. |
 | `ANTHROPIC_API_KEY` | AI assistant, photo analysis | From the [Claude Console](https://platform.claude.com). Model defaults to `claude-opus-5-5`; override with `ANTHROPIC_MODEL`. |
 | `GOOGLE_CLIENT_ID` | Google sign-in | OAuth 2.0 **Web** client ID from Google Cloud Console. Add your site's origin to *Authorized JavaScript origins*. |
 | `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Mobile OTP in production | Without these, mobile sign-in is hidden in production. Indian numbers need DLT-registered templates with most providers. |
@@ -69,15 +69,28 @@ Copy `backend/.env.example` to `backend/.env` locally. On Vercel, set these unde
 2. Deploy, then **open a deep link such as `/profile` directly and refresh it**. If it returns 404, add a rewrite that serves `index.html` for non-`/api` paths to the frontend service. (After the first visit, the service worker covers this, but first visits need the rewrite.)
 3. Check `https://<your-domain>/api/health`. It reports database status.
 
+## Troubleshooting a deployment
+
+**First, open `https://<your-domain>/api/health`.** It never crashes and tells you what's wrong:
+
+| You see | Meaning | Fix |
+|---|---|---|
+| `"status":"ONLINE","database":"ok"` | Everything is fine | |
+| `"status":"NOT_CONFIGURED"` with a `missing` list | `JWT_SECRET` and/or `DATABASE_URL` aren't set | Add them under **Vercel → Settings → Environment Variables** and **redeploy** (variables only apply to new deployments) |
+| `"database":"unavailable"` | The variables are set but the database can't be reached | Check the connection string, and that the database allows connections from Vercel |
+| A plain Vercel error page / `Request failed (500)` on the login screen | The function failed to start | Open **Vercel → Logs** for the deployment and read the first error |
+
+While setup is incomplete the site answers `503 This site isn't fully set up yet` instead of failing silently.
+
 ## Tests
 
 ```bash
-cd backend && npm test                  # 36 API tests on an in-memory Postgres; no network or keys needed
+cd backend && npm test                  # 43 tests: API, Claude (mocked), and the backend as Vercel compiles it; no network or keys needed
 cd frontend && npm run lint && npm run build
 cd frontend && npx playwright install chromium && npm run test:e2e   # 7 browser tests (real backend + production build)
 ```
 
-CI (`.github/workflows/ci.yml`) runs all three on every pull request. External services (Claude, Open-Meteo, OpenStreetMap, NDMA) are mocked in tests.
+CI (`.github/workflows/ci.yml`) runs all three on every pull request. The backend tests run twice: on the built-in database and against a real Postgres 16 server. External services (Claude, Open-Meteo, OpenStreetMap, NDMA) are mocked in tests.
 
 ## Before launch: please review
 

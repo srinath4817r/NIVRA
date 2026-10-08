@@ -1,3 +1,8 @@
+// backend/db/schema.js — database schema (idempotent; applied on every cold start)
+// Kept as a JS module, not a .sql file: Vercel compiles each source file to its own .cjs and does
+// not copy other files next to them, so reading a file at runtime fails in production.
+
+module.exports = `
 -- NIVRA user data schema (idempotent; runs on every cold start)
 
 CREATE TABLE IF NOT EXISTS users (
@@ -75,3 +80,4 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS reports_user_idx ON reports (user_id, created_at DESC);
+`;

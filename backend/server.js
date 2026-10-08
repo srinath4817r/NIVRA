@@ -34,10 +34,8 @@ app.use(cookieParser());
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
-// Make sure the schema exists before any request touches the database
-app.use(async (req, res, next) => {
-  try { await db.init(); next(); } catch (err) { next(err); }
-});
+// The database connects (and the schema is created) on first use, inside db.query, so pages
+// that need no data (login options, scholarship lists) keep working if it is unreachable.
 
 app.get('/health', (req, res) => res.redirect(307, '/api/health'));
 app.use('/api', apiRoutes);
@@ -56,7 +54,8 @@ app.use((err, req, res, next) => {
     console.error('Unhandled Error:', err);
     Sentry?.captureException(err, { tags: { route: req.route?.path || req.path } });
   }
-  res.status(status).json({ error: status >= 500 ? 'Something went wrong on our side. Please try again.' : message });
+  // `expose` marks errors whose message is written for users (e.g. database unreachable)
+  res.status(status).json({ error: status >= 500 && !err.expose ? 'Something went wrong on our side. Please try again.' : message });
 });
 
 if (require.main === module) {

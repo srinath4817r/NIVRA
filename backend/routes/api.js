@@ -1,6 +1,7 @@
 // backend/routes/api.js — mounts every /api route
 const express = require('express');
 const db = require('../db');
+const config = require('../config');
 const limits = require('../middleware/rateLimits');
 const { loadUser } = require('../middleware/auth');
 
@@ -10,12 +11,29 @@ router.use(limits.general);
 
 // 🩺 Health (reachable through the /api rewrite on Vercel)
 router.get('/health', async (req, res) => {
+  if (config.setupProblems.length) {
+    // names of missing settings only, never values
+    return res.status(503).json({
+      status: 'NOT_CONFIGURED',
+      missing: config.setupProblems.map(p => ({ variable: p.variable, fix: p.fix })),
+      timestamp: new Date().toISOString(),
+    });
+  }
   let database = 'ok';
   try { await db.query('SELECT 1'); } catch { database = 'unavailable'; }
   res.status(database === 'ok' ? 200 : 503).json({
     status: database === 'ok' ? 'ONLINE' : 'DEGRADED',
     database,
+    ...(config.databaseUrlVariable ? { databaseVariable: config.databaseUrlVariable } : {}),
     timestamp: new Date().toISOString(),
+  });
+});
+
+// Until the host is configured, say so plainly instead of failing in obscure ways
+router.use((req, res, next) => {
+  if (!config.setupProblems.length) return next();
+  res.status(503).json({
+    error: `This site isn't fully set up yet. If you run it, add ${config.setupProblems.map(p => p.variable).join(' and ')} in your hosting settings and redeploy. Visit /api/health for details.`,
   });
 });
 

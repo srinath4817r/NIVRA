@@ -13,8 +13,23 @@ after(() => db.close());
 const PNG_1PX = Buffer.from('89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000D49444154789C6360000002000154A24F5D0000000049454E44AE426082', 'hex');
 
 let calls;
+// The service asks for JSON text; tests describe the answer as `parsed_output` for readability
 function fakeClient(respond) {
-  return { beta: { messages: { parse: async (params) => { calls.push(params); return respond(params); } } } };
+  return {
+    beta: {
+      messages: {
+        create: async (params) => {
+          calls.push(params);
+          const r = await respond(params);
+          if (!('parsed_output' in r)) return r;
+          return {
+            stop_reason: r.stop_reason,
+            content: r.parsed_output ? [{ type: 'text', text: JSON.stringify(r.parsed_output) }] : [],
+          };
+        },
+      },
+    },
+  };
 }
 beforeEach(() => { calls = []; ai.setClient(null); });
 
@@ -53,7 +68,12 @@ test('Claude request: model, cached catalog prompt, fallbacks, structured output
   assert.equal(p.system[0].cache_control.type, 'ephemeral');
   assert.match(p.system[0].text, /sch-3/, 'catalog is in the system prompt');
   assert.equal(p.output_config.effort, 'low');
-  assert.ok(p.output_config.format, 'structured output format set');
+  assert.equal(p.output_config.format.type, 'json_schema');
+  const schema = p.output_config.format.schema;
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.$schema, undefined, 'no $schema key');
+  assert.deepEqual(schema.required.sort(), ['documentChecklist', 'intent', 'matchedItemIds', 'nextSteps', 'reply', 'sources', 'urgent']);
+  assert.equal(schema.properties.sources.items.additionalProperties, false, 'nested objects are closed too');
   assert.equal(p.thinking, undefined, 'thinking left at the model default');
   assert.equal(p.messages[0].role, 'user', 'leading assistant turn dropped');
   assert.equal(p.messages.at(-1).content, 'I am a girl in first year BTech');
@@ -123,4 +143,18 @@ test('photo analysis: unavailable without Claude, base64 image when configured',
 test('photo analysis requires sign-in', async () => {
   const res = await request(app).post('/api/ai/analyze-image').attach('image', PNG_1PX, 'a.png');
   assert.equal(res.status, 401);
+});
+
+test('an unexpected intent label degrades to the default instead of failing', async () => {
+  ai.setClient(fakeClient(() => answer({ intent: 'SOMETHING_NEW' })));
+  const res = await request(app).post('/api/ai/chat').send({ query: 'help' });
+  assert.equal(res.body.aiMode, 'claude');
+  assert.equal(res.body.intentCategory, 'GENERAL_GUIDANCE');
+});
+
+test('malformed model output falls back to the keyword engine', async () => {
+  ai.setClient(fakeClient(() => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'not json' }] })));
+  const res = await request(app).post('/api/ai/chat').send({ query: 'education loan' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.aiMode, 'basic');
 });

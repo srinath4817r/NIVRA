@@ -8,6 +8,15 @@ export class ApiError extends Error {
   }
 }
 
+// What to say when the server answered with something that isn't one of our JSON errors
+// (e.g. the hosting platform's own error page when the server fails to start)
+function fallbackMessage(status) {
+  if (status === 404) return "That wasn't found.";
+  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
+  if (status >= 500) return `NIVRA's server isn't responding properly right now (error ${status}). Please try again in a minute.`;
+  return `Something went wrong (error ${status}). Please try again.`;
+}
+
 // Session lives in an httpOnly cookie, so every call sends credentials
 export async function request(path, { method = 'GET', body, params, form } = {}) {
   const qs = params
@@ -25,7 +34,7 @@ export async function request(path, { method = 'GET', body, params, form } = {})
     throw new ApiError("Can't reach NIVRA right now. Check your connection and try again.", 0);
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error || `Request failed (${res.status})`, res.status);
+  if (!res.ok) throw new ApiError(data.error || fallbackMessage(res.status), res.status);
   return data;
 }
 

@@ -3,7 +3,7 @@
 // as schema-validated JSON. Links and item ids are filtered server-side so the model can't
 // send users to a URL or scheme that isn't in the catalog.
 const Anthropic = require('@anthropic-ai/sdk');
-const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
+const { toStrictSchema } = require('./jsonSchema');
 const { z } = require('zod');
 const config = require('../config');
 const content = require('../data/content');
@@ -76,7 +76,8 @@ const allowedUrls = new Set([
 ].filter(Boolean));
 
 const ChatAnswer = z.object({
-  intent: z.enum(INTENTS),
+  // the API doesn't enforce enums, so an unexpected label degrades to the default
+  intent: z.enum(INTENTS).catch('GENERAL_GUIDANCE'),
   urgent: z.boolean(),
   reply: z.string(),
   matchedItemIds: z.array(z.string()),
@@ -84,6 +85,14 @@ const ChatAnswer = z.object({
   nextSteps: z.array(z.string()),
   sources: z.array(z.object({ name: z.string(), url: z.string() })),
 });
+
+const CHAT_SCHEMA = toStrictSchema(ChatAnswer);
+
+// Structured output arrives as JSON text in the first text block
+function parseJson(response, schema) {
+  const text = (response.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  return schema.parse(JSON.parse(text));
+}
 
 function profileLine(profile) {
   if (!profile || !Object.keys(profile).length) return '';
@@ -117,13 +126,13 @@ async function chat(query, { history = [], profile, language = 'en' } = {}) {
   // The API requires the first message to be from the user
   while (messages.length && messages[0].role !== 'user') messages.shift();
 
-  const response = await getClient().beta.messages.parse({
+  const response = await getClient().beta.messages.create({
     model: config.anthropicModel,
     max_tokens: 16000,
     betas: [FALLBACK_BETA],
     fallbacks: 'default',
     system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    output_config: { effort: 'low', format: betaZodOutputFormat(ChatAnswer) },
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: CHAT_SCHEMA } },
     messages,
   });
 
@@ -138,8 +147,7 @@ async function chat(query, { history = [], profile, language = 'en' } = {}) {
     };
   }
 
-  const out = response.parsed_output;
-  if (!out) throw new Error(`Claude returned no parseable output (stop_reason: ${response.stop_reason})`);
+  const out = parseJson(response, ChatAnswer);
 
   const seen = new Set();
   return {
@@ -179,13 +187,15 @@ const PHOTO_PROMPT = `This photo was attached to a disaster/emergency report in 
 - peopleAtRisk: true only if people appear to be in danger.
 If the photo shows an identity document, do not transcribe any numbers from it.`;
 
+const PHOTO_SCHEMA = toStrictSchema(PhotoAnalysis);
+
 async function analyzePhoto(buffer, mimeType, note) {
-  const response = await getClient().beta.messages.parse({
+  const response = await getClient().beta.messages.create({
     model: config.anthropicModel,
     max_tokens: 4000,
     betas: [FALLBACK_BETA],
     fallbacks: 'default',
-    output_config: { effort: 'low', format: betaZodOutputFormat(PhotoAnalysis) },
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: PHOTO_SCHEMA } },
     messages: [{
       role: 'user',
       content: [
@@ -195,10 +205,10 @@ async function analyzePhoto(buffer, mimeType, note) {
     }],
   });
 
-  if (response.stop_reason === 'refusal' || !response.parsed_output) {
+  if (response.stop_reason === 'refusal') {
     return { success: false, error: "This photo couldn't be analysed. You can still submit the report." };
   }
-  return { success: true, ...response.parsed_output };
+  return { success: true, ...parseJson(response, PhotoAnalysis) };
 }
 
-module.exports = { chat, analyzePhoto, isEnabled, setClient, SYSTEM_PROMPT, INTENTS };
+module.exports = { chat, analyzePhoto, isEnabled, setClient, SYSTEM_PROMPT, INTENTS, CHAT_SCHEMA, PHOTO_SCHEMA };
